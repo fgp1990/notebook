@@ -17,16 +17,47 @@ Stream grouping：消息分发策略，一共6种，定义每个Bolt接受何种
 Reliability：可靠性，Storm保证每个Tuple都会被处理。
 ## 三、Storm原理架构
 ### 1、Storm集群架构图
-
+```mermaid
+graph LR
+  id1(N nbus)-->id2[Zookeeper集群];
+  id2-->id3(Supervisor)
+  id2-->id4(Supervisor)
+  id2-->id5(Supervisor)
+  id5-->id6((Worker))
+  id5-->id7((Worker))
+  id7-->id8[Task]
+  id7-->id9[Task]
+  id7-->id10[Task]
+```
 Zookeeper集群在Storm集群中的作用：
 Zookeeper集群负责Nimbus节点和Supervior节点之间的通信，监控各个节点之间的状态。比如通常我们提交任务的时候是在Nimbus节点上执行的，Nimbus节点通过zk集群将任务分发下去，而Supervisor是真正执行任务的地方。Nimbus节点通过zk集群监控各个Supervisor节点的状态，当某个Supervisor节点出现故障的时候，Nimbus节点就会通过zk集群将那个Supervisor节点上的任务重新分发，在其他Supervisor节点上执行。这就意味着Storm集群也是高可用集群，如果Nimbus节点出现故障的时候，整个任务并不会停止，但是任务的管理会出现影响，通常这种情况下我们只需要将Nimbus节点恢复就可以了。Nimbus节点不支持高可用，这也是Storm目前面临的问题之一。不过一般情况下，Nimbus节点的压力不大，通常不会出现问题。
 一般情况下，Zookeeper集群的压力并不大，一般只需要部署3台就够了。Zookeeper集群在Storm集群中逻辑上是独立的，但在实际部署的时候，一般会将zk节点部署在Nimbus节点或Supervisor节点上。
 ### 2、数据处理流程图
 storm处理数据的特点：数据源源不断，不断处理。
-
+```mermaid
+graph LR
+id1(Spout)==>id2[Tuple]
+id2-->id3[Tuple]
+id3-->id4[Tuple]
+id4==>id5[Bolt-处理器]
+id5==>id6[Tuple]
+id6-->id7[Tuple]
+id7-->id8[Tuple]
+id5==>id9[Tuple]
+id9-->id10[Tuple]
+id10-->id11[Tuple]
+id8==>id12[Bolt-处理器]
+id11==>id13[Bolt-处理器]
+```
+上图中3个Tuple是一个组
 ### 3、拓扑图分析
 storm中是没有数据存储结构的，我们需要自己设计数据落地接口，指明数据存储到哪一部分中。Storm本身是不存储数据的。
-
+```mermaid
+graph LR
+id1[Spout]-->id2((Bolt A))-->id3((Bolt B))
+id1-->id4((Bolt C))-->id5((Bolt D))
+id4-->id6((Bolt F))
+```
 ## 四、Storm集群安装部署
 ### 1、环境信息
 |主机名|操作系统版本|IP地址|安装软件|
@@ -47,6 +78,32 @@ log1、log2和log3部署storm集群，log1作为Nimbus节点，log2和log3作为
 ```
 [root@log1 ~]# cd /usr/local/apache-storm-1.0.0/
 [root@log1 apache-storm-1.0.0]# vim conf/storm.yaml
+```
++ 配置Zookeeper地址（配置Zookeeper的主机名，注意：如果Zookeeper集群使用的不是默认端口，那么还需要配置storm.zookeeper.port）
++ storm.local.dir: The Nimbus and Supervisor daemons require a directory on the local disk to store small amounts of state(like jars, confs, and things like that).在配置文件里添加一行：
+```
+storm.local.dir: "/usr/local/apache-storm-1.0.0/status"
+```
+这个status目录在storm启动的时候会自动创建，当然也可以提前创建好。
++ 配置nimbus.seeds：用于配置主控节点的地址，可以配置多个。
++ 配置supervisor.slots.ports
+```
+supervisor.slots.ports:
+    - 6700
+    - 6701
+    - 6702
+    - 6703
+```
+配置工作节点上的进程端口。你配置一个端口，意味着工作节点上启动一个worker，在实际的生产环境中，我们需要根据实际的物理配置以及每个节点上的负载情况来配置这个端口的数量。在这里每个节点我象征性的配置4个端口。
+<font color="red">注意:以上配置，凡是有冒号的地方，冒号后都要有个空格。</font>
+log2和log3主机也是同样的配置。拷贝这台机器的storm包到log2和log3主机：
+```
+[root@log1 local]# scp -pr apache-storm-1.0.0 root@114.55.29.241:/usr/local/
+[root@log1 local]# scp -pr apache-storm-1.0.0 root@114.55.253.15:/usr/local/
+```
++ 对于两台supervisor node，我们额外开启JMX支持，在配置文件中加入如下配置：
+```
+supervisor.childopts: -verbose:gc -XX:+PrintGCTimeStamps -XX:+PrintGCDetails -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.port=9998
 ```
 #### 3. 配置storm环境变量
 ```
