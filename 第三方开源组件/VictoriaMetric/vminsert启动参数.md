@@ -61,7 +61,7 @@ TCP and UDP address to listen for Influx line protocol data. Usually :8189 must 
 -influxMeasurementFieldSeparator string
 Separator for '{measurement}{separator}{field*name}' metric name when inserted via Influx line protocol (default "*")
 
-#### 使用 field_name 最为 metric 名称，忽略 measurement 和 -influxMeasurementFieldSeparator
+#### 使用 field_name 作为 metric 名称，忽略 measurement 和 -influxMeasurementFieldSeparator
 
 -influxSkipMeasurement
 Uses '{field_name}' as a metric name while ignoring '{measurement}' and '-influxMeasurementFieldSeparator'
@@ -125,7 +125,7 @@ Trim timestamps for OpenTSDB HTTP data to this duration. Minimum practical durat
 -relabelConfig string
 Optional path to a file with relabeling rules, which are applied to all the ingested metrics. See https://victoriametrics.github.io/####relabeling for details
 
-#### 副本数，即在-storageNode 要复制多少个副本。当-replicationFactor>1 时，vmselect 必须以-dedup.minScrapeInterval=1ms 运行，以进行重复数据的删除。~~vmselect 的-dedup.minScrapeInterval 可以大一些~~
+#### 副本数，即在-storageNode 要复制多少个副本。当-replicationFactor>1 时，vmselect 必须以-dedup.minScrapeInterval=1ms 运行，以进行重复数据的删除。vmselect 的-dedup.minScrapeInterval 可以大一些
 
 -replicationFactor int
 Replication factor for the ingested data, i.e. how many copies to make among distinct -storageNode instances. Note that vmselect must run with -dedup.minScrapeInterval=1ms for data de-duplication when replicationFactor is greater than 1. Higher values for -dedup.minScrapeInterval at vmselect is OK (default 1)
