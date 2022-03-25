@@ -1,0 +1,223 @@
+## 通道(Channels)
+
+通道(channels) 是连接多个协程的管道。 你可以从一个协程将值发送到通道，然后在另一个协程中接收。
+```
+package main
+import "fmt"
+func main() {
+```
+使用 make(chan val-type) 创建一个新的通道。 通道类型就是他们需要传递值的类型。
+
+    messages := make(chan string)
+使用 channel <- 语法 发送 一个新的值到通道中。 这里我们在一个新的协程中发送 "ping" 到上面创建的 messages 通道中。
+    
+    go func() { messages <- "ping" }()
+使用 <-channel 语法从通道中 接收 一个值。 这里我们会收到在上面发送的 "ping" 消息并将其打印出来。
+```
+        msg := <-messages
+        fmt.Println(msg)
+    }
+```
+
+我们运行程序时，通过通道， 成功的将消息 "ping" 从一个协程传送到了另一个协程中。
+```
+$ go run channels.go
+ping
+```
+默认发送和接收操作是阻塞的，直到发送方和接收方都就绪。 这个特性允许我们，不使用任何其它的同步操作， 就可以在程序结尾处等待消息 "ping"。  
+
+###
+完整代码：
+```
+package main
+
+import "fmt"
+
+func main() {
+    messages := make(chan string)
+    go func() { messages <- "ping" }()
+    msg := <-messages
+    fmt.Println(msg)
+}
+```
+注意messages在定义的时候指定的类型。channel可以传递的值的类型是有明确限制的，这个例子里面是string，那么传递的时候就只能是string  
+
+##### make创建channel的时候  
+
+    message := make(chan String)
+>The make built-in function allocates and initializes an object of type slice, map, or chan (only)
+
+意思是：make只能对三种类型创建，slice、map、chan，关键字也只有这三种，别的都不认  
+
+##### channel的通信
+```
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(done chan bool) {
+    fmt.Print("working...")
+    time.Sleep(time.Second)
+    fmt.Println("done")
+
+    done <- true
+}
+
+func main() {
+
+    done := make(chan bool, 1)
+    go worker(done)
+
+    <-done
+}
+```
+这里解释下最后的```<-done```。这个其实少写了接收变量，完整的写法```a := <-done```。意思是从done这个channel里接收值，赋给a。如果没有a，就是单纯的接收done这个channel的值，然后丢了。  
+这里是为了让程序不要立马结束。如果没有这一行，```go worker(done)```以后，程序立即结束，就不会再执行worker函数中```fmt.Prinrln("done")```这一句了。有了这一句，程序就会等待通道中的值，直到接收，然后再结束。  
+做个实验：  
+我将worker函数中最后一句```done <- true```去掉。预测程序无法停止，卡在这里了  
+
+结果如下：
+```
+F:\goProject>go run HelloWorld.go
+working...done
+fatal error: all goroutines are asleep - deadlock!
+
+goroutine 1 [chan receive]:
+main.main()
+        F:/goProject/HelloWorld.go:21 +0x85
+exit status 2
+```
+所有的路由都睡了，死锁。如预测。
+
+##### 通道内数据消费
+一个通道要使用，必然要有发送端和接收端  
+<font color="#dd0000">通道的接收和发送，必须存在于两个不同的函数；或者，给通道添加缓冲区</font>  
+```
+package main
+
+import "fmt"
+
+func main() {
+    messages := make(chan string)
+    signals := make(chan bool)
+
+    select {
+    case msg := <-messages:
+        fmt.Println("received message", msg)
+    default:
+        fmt.Println("no message received")
+    }
+
+    msg := "hi"
+    select {
+    case messages <- msg:
+        fmt.Println("sent message", msg)
+    default:
+        fmt.Println("no message sent")
+    }
+
+    select {
+    case msg := <-messages:
+        fmt.Println("received message", msg)
+    case sig := <-signals:
+        fmt.Println("received signal", sig)
+    default:
+        fmt.Println("no activity")
+    }
+}
+```
+上面这个例子，就是没有缓冲区的通道，它的传入和传出就会阻塞。
+>向无缓存的chan发送数据，这个携程就被一直阻塞了，后一个case无法执行，因为这个携程处于阻塞态。而如果，你在外面接收ch2的数据，就会释放阻塞态。  
+
+所以说，这个例子都走了default分支
+
+##### close()函数
+close(name chan)是用来关闭通道的，在执行close()后，通道将无法继续接受数据，但可以将已经存入的数据取出  
+```
+package main
+
+import "fmt"
+
+func main() {
+
+	queue := make(chan string, 5)
+	queue <- "one"
+	queue <- "two"
+	queue <- "three"
+	close(queue)
+
+	for elem := range queue {
+		fmt.Println(elem)
+	}
+}
+```
+这里和前一节貌似冲突，这个例子中，通道的接收和发送在一个函数里面。这是close()的作用。
+
+##### 工作池
+```
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func worker(id int, jobs <-chan int, results chan<- int) {
+    for j := range jobs {
+        fmt.Println("worker", id, "started  job", j)
+        time.Sleep(time.Second)
+        fmt.Println("worker", id, "finished job", j)
+        results <- j * 2
+    }
+}
+
+func main() {
+
+    const numJobs = 5
+    jobs := make(chan int, numJobs)
+    results := make(chan int, numJobs)
+
+    for w := 1; w <= 3; w++ {
+        go worker(w, jobs, results)
+    }
+
+    for j := 1; j <= numJobs; j++ {
+        jobs <- j
+    }
+    close(jobs)
+
+    for a := 1; a <= numJobs; a++ {
+        <-results
+    }
+}
+```
+这一段就是一个工作池样例。  
+启动了三个协程，共同从job这个通道取任务。这里job被塞进去5个任务，由1、2、3这三个worker共同处理，谁取到了就处理。  
+执行结果：可以看出来，每次执行的结果是不一样的——顺序不同
+```
+worker 3 started  job 3
+worker 1 started  job 1
+worker 2 started  job 2
+worker 1 finished job 1
+worker 1 started  job 4
+worker 2 finished job 2
+worker 2 started  job 5
+worker 3 finished job 3
+worker 2 finished job 5
+worker 1 finished job 4
+```
+```
+worker 3 started  job 3
+worker 2 started  job 2
+worker 1 started  job 1
+worker 2 finished job 2
+worker 2 started  job 4
+worker 1 finished job 1
+worker 1 started  job 5
+worker 3 finished job 3
+worker 2 finished job 4
+worker 1 finished job 5
+```
